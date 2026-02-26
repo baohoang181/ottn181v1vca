@@ -1,191 +1,238 @@
-/** * OTTN181 v1 - MAIN SCRIPT (ULTIMATE) */
-
+/** OTTN181 v1 - ETERNAL DIAMOND SCRIPT */
 const app = {
-    originalData: [],
-    workingData: [],
-    userName: "",
-    isDataLoaded: false,
+    rawQuiz: [],      // Dữ liệu gốc
+    displayQuiz: [],  // Dữ liệu hiển thị (sau xáo trộn/chỉnh sửa)
+    history: {},      // Lưu cài đặt trước đó
+    currIdx: null,    // Index câu đang sửa
+    timer: null,
+    prog: 0,
 
     init() {
-        this.initNano();
-        document.getElementById('btn-run').onclick = () => this.handleAIProcess();
-        document.getElementById('btn-done').onclick = () => this.submitQuiz();
-        this.renderLeaderboard();
+        this.runNano();
+        this.loadAutoSave(); // Tự động khôi phục nếu lỡ F5
+        this.saveCurrentState();
+        document.getElementById('btn-run').onclick = () => this.handleAI();
+        // Lắng nghe thay đổi radio để Auto-save tiến độ làm bài
+        document.addEventListener('change', (e) => { if(e.target.name?.startsWith('q')) this.autoSaveProgress(); });
     },
 
-    initNano() {
-        const canvas = document.getElementById('nano-canvas');
-        const ctx = canvas.getContext('2d');
-        let pts = [];
-        const resize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; };
-        window.onresize = resize; resize();
-        for(let i=0; i<80; i++) pts.push({x:Math.random()*canvas.width, y:Math.random()*canvas.height, s:Math.random()*2, v:Math.random()*0.3+0.1});
-        const anim = () => {
-            ctx.clearRect(0,0,canvas.width,canvas.height); ctx.fillStyle = "rgba(26,115,232,0.15)";
-            pts.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, p.s, 0, 7); ctx.fill(); p.y += p.v; if(p.y>canvas.height) p.y=-5; });
-            requestAnimationFrame(anim);
-        };
-        anim();
+    // --- TÍNH NĂNG: AUTO SAVE ---
+    autoSaveProgress() {
+        const answers = {};
+        this.displayQuiz.forEach((_, i) => {
+            const sel = document.querySelector(`input[name="q${i}"]:checked`);
+            if(sel) answers[i] = sel.value;
+        });
+        localStorage.setItem('ottn181_save', JSON.stringify({
+            quiz: this.displayQuiz,
+            ans: answers,
+            title: document.getElementById('quiz-title').value,
+            time: document.getElementById('q-time').value
+        }));
     },
 
+    loadAutoSave() {
+        const saved = localStorage.getItem('ottn181_save');
+        if(!saved) return;
+        if(confirm("Huy ơi, hệ thống tìm thấy bài làm đang dở. Khôi phục lại nhé?")) {
+            const data = JSON.parse(saved);
+            this.displayQuiz = data.quiz;
+            ui.hide('control-panel'); ui.show('workspace');
+            this.renderQuiz();
+            for(let i in data.ans) {
+                const rb = document.querySelector(`input[name="q${i}"][value="${data.ans[i]}"]`);
+                if(rb) rb.checked = true;
+            }
+            this.startTimer(data.time * 60);
+        }
+    },
+
+    // --- TÍNH NĂNG: CHỈNH SỬA NÂNG CAO (EDITOR) ---
     checkEditCondition() {
-        if(!this.isDataLoaded) return ui.show('pop-error');
-        this.openEditor();
+        if(this.rawQuiz.length === 0) {
+            ui.show('pop-loading'); // Giả lập để nhắc nhở
+            setTimeout(() => { ui.hide('pop-loading'); alert("Huy cần tạo đề trước khi chỉnh sửa!"); }, 500);
+            return;
+        }
+        this.currIdx = null;
+        this.renderEditorList();
+        ui.show('pop-editor-advanced');
     },
 
-    async handleAIProcess() {
+    renderEditorList() {
+        document.getElementById('edit-header').innerText = "Danh sách câu hỏi";
+        document.getElementById('btn-save-edit').classList.add('hidden');
+        const area = document.getElementById('editor-content-area');
+        area.innerHTML = this.rawQuiz.map((q, i) => `
+            <div class="edit-btn-gate" onclick="app.openQuestionGate(${i})">
+                <b>${i+1}.</b> ${q.question.substring(0, 60)}...
+            </div>
+        `).join('');
+    },
+
+    openQuestionGate(idx) {
+        this.currIdx = idx;
+        document.getElementById('edit-header').innerText = `Chỉnh sửa Câu ${idx+1}`;
+        const area = document.getElementById('editor-content-area');
+        area.innerHTML = `
+            <button class="edit-btn-gate" onclick="app.renderEditForm('ans')">1. Chỉnh sửa Đáp án đúng</button>
+            <button class="edit-btn-gate" onclick="app.renderEditForm('all')">2. Chỉnh sửa Nội dung (Câu hỏi & 4 Đáp án)</button>
+        `;
+    },
+
+    renderEditForm(type) {
+        const q = this.rawQuiz[this.currIdx];
+        const area = document.getElementById('editor-content-area');
+        const btnSave = document.getElementById('btn-save-edit');
+        btnSave.classList.remove('hidden');
+
+        if(type === 'ans') {
+            area.innerHTML = `<p style="margin-bottom:15px">Chọn lại đáp án đúng:</p>` + 
+                q.options.map((o, i) => `<label style="display:block; margin:10px 0"><input type="radio" name="edit-correct" value="${i}" ${i===q.correct?'checked':''}> ${o}</label>`).join('');
+            btnSave.onclick = () => {
+                this.rawQuiz[this.currIdx].correct = parseInt(document.querySelector('input[name="edit-correct"]:checked').value);
+                this.renderEditorList();
+            };
+        } else {
+            area.innerHTML = `
+                <div style="text-align:left">
+                    <label>Câu hỏi:</label><textarea id="ed-q" style="width:100%; height:80px; margin-bottom:15px">${q.question}</textarea>
+                    ${q.options.map((o, i) => `<label>Đáp án ${i+1}:</label><input id="ed-o${i}" value="${o}" style="width:100%; margin-bottom:10px">`).join('')}
+                </div>
+            `;
+            btnSave.onclick = () => {
+                this.rawQuiz[this.currIdx].question = document.getElementById('ed-q').value;
+                this.rawQuiz[this.currIdx].options = [0,1,2,3].map(i => document.getElementById(`ed-o${i}`).value);
+                this.renderEditorList();
+            };
+        }
+    },
+
+    editorBack() {
+        if(document.getElementById('edit-header').innerText === "Danh sách câu hỏi") ui.close('pop-editor-advanced');
+        else this.renderEditorList();
+    },
+
+    // --- TÍNH NĂNG: XUẤT PDF ---
+    exportToPDF() {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        const title = document.getElementById('quiz-title').value || "Ket qua OTTN181";
+        doc.text("KET QUA BAI LAM - OTTN181", 105, 20, { align: "center" });
+        const rows = this.displayQuiz.map((q, i) => {
+            const sel = document.querySelector(`input[name="q${i}"]:checked`);
+            const uAns = sel ? q.options[sel.value] : "N/A";
+            return [i+1, q.question.substring(0, 50), q.options[q.correct], uAns, (sel && parseInt(sel.value)===q.correct?"DUNG":"SAI")];
+        });
+        doc.autoTable({ startY: 30, head: [['STT', 'Cau hoi', 'Dap an dung', 'Ban chon', 'Ket qua']], body: rows });
+        doc.save(`${title}.pdf`);
+    },
+
+    // --- LOGIC CỐT LÕI ---
+    async handleAI() {
         const file = document.getElementById('file-upload').files[0];
-        const prompt = document.getElementById('ai-prompt').value;
-        
+        const prompt = document.getElementById('ai-prompt').value.trim();
+        if(!file && !prompt) {
+            ui.show('pop-loading'); // Alert trá hình
+            const f = document.getElementById('wrap-file'), p = document.getElementById('wrap-prompt');
+            f.classList.add('blink-active'); p.classList.add('blink-active');
+            setTimeout(() => { ui.hide('pop-loading'); f.classList.remove('blink-active'); p.classList.remove('blink-active'); }, 3000);
+            return;
+        }
+        this.saveCurrentState();
         ui.show('pop-loading');
-        this.startProgress(7000);
-
+        this.runBar();
         try {
-            let text = "";
-            if(file) text = await QuizAI.extractText(file);
-            
-            this.originalData = await QuizAI.generate({
-                text: text, prompt: prompt,
-                count: document.getElementById('q-count').value,
-                mode: document.getElementById('quiz-mode').value
-            });
-
-            this.isDataLoaded = true;
-            setTimeout(() => { ui.hide('pop-loading'); ui.show('pop-name'); }, 7000);
-        } catch (e) {
-            ui.hide('pop-loading');
-            alert("Lỗi: " + e.message);
-        }
+            let txt = file ? await QuizAI.extractText(file) : "Manual Mode";
+            this.rawQuiz = await QuizAI.generate({ text: txt, prompt, count: document.getElementById('q-count').value, mode: document.getElementById('quiz-mode').value });
+        } catch (e) { this.abortProcess(); alert("AI Busy!"); }
     },
 
-    startProgress(time) {
-        let p = 0;
-        const fill = document.getElementById('bar-fill');
-        const txt = document.getElementById('load-txt');
-        const iv = setInterval(() => {
-            p += 1; fill.style.width = p + "%";
-            if(p>30) txt.innerText = "Đang tối ưu câu hỏi...";
-            if(p>70) txt.innerText = "Đang kiểm duyệt đáp án...";
-            if(p>=100) clearInterval(iv);
-        }, time/100);
-    },
-
-    confirmEntry(skip = false) {
-        const passSet = document.getElementById('quiz-pass').value;
-        if(passSet) {
-            const passTrial = prompt("Nhập mật khẩu để bắt đầu bài làm:");
-            if(passTrial !== passSet) return alert("Sai mật khẩu!");
-        }
-
-        const name = document.getElementById('user-name').value;
-        if(!skip && !name) return alert("Vui lòng nhập tên!");
-        this.userName = skip ? "" : name;
-        ui.hide('pop-name');
-        this.startQuiz();
+    runBar() {
+        this.prog = 0;
+        const itv = setInterval(() => {
+            this.prog++;
+            document.getElementById('bar-fill').style.width = this.prog + "%";
+            if(this.prog >= 100) { clearInterval(itv); ui.hide('pop-loading'); ui.show('pop-congrats'); }
+        }, 70);
     },
 
     startQuiz() {
-        ui.hide('control-panel');
-        ui.show('workspace');
-        document.getElementById('display-title').innerText = document.getElementById('quiz-title').value || "Bài làm OTTN181";
-        
-        // Logic xáo trộn chuyên sâu
-        this.workingData = JSON.parse(JSON.stringify(this.originalData));
-        if(document.getElementById('mix-q').checked) this.workingData.sort(() => Math.random() - 0.5);
-        
-        if(document.getElementById('mix-a').checked) {
-            this.workingData.forEach(q => {
-                const correctText = q.options[q.correct];
-                q.options.sort(() => Math.random() - 0.5);
-                q.correct = q.options.indexOf(correctText);
-            });
-        }
-
+        const p = document.getElementById('quiz-pass').value;
+        if(p && prompt("Mật khẩu đề thi:") !== p) return;
+        ui.hide('pop-name'); ui.hide('control-panel'); ui.show('workspace');
+        this.displayQuiz = JSON.parse(JSON.stringify(this.rawQuiz));
+        if(document.getElementById('mix-q').checked) this.displayQuiz.sort(() => Math.random() - 0.5);
         this.renderQuiz();
-        this.runTimer();
+        this.startTimer(document.getElementById('q-time').value * 60);
     },
 
     renderQuiz() {
-        const area = document.getElementById('quiz-render-area');
-        area.innerHTML = this.workingData.map((q, i) => `
-            <div class="q-card">
+        document.getElementById('display-title').innerText = document.getElementById('quiz-title').value || "Bài làm OTTN181";
+        document.getElementById('quiz-render').innerHTML = this.displayQuiz.map((q, i) => `
+            <div class="q-card" style="background:white; padding:20px; border-radius:20px; margin-bottom:15px">
                 <h4>Câu ${i+1}: ${q.question}</h4>
-                ${q.options.map((o, j) => `
-                    <label class="opt-lab"><input type="radio" name="q${i}" value="${j}"> ${o}</label>
-                `).join('')}
+                ${q.options.map((o, j) => `<label style="display:block; margin-top:10px; cursor:pointer"><input type="radio" name="q${i}" value="${j}"> ${o}</label>`).join('')}
             </div>
         `).join('');
     },
 
-    openEditor() {
-        const area = document.getElementById('editor-area');
-        area.innerHTML = this.originalData.map((q, i) => `
-            <div style="border-bottom:1px solid #eee; padding:15px 0;">
-                <b>Câu ${i+1}:</b> <input type="text" value="${q.question}" onchange="app.originalData[${i}].question=this.value">
-                <div style="margin-top:10px">
-                    ${q.options.map((o, j) => `
-                        <input type="text" value="${o}" onchange="app.originalData[${i}].options[${j}]=this.value" style="width:45%; margin:2px">
-                    `).join('')}
-                </div>
-            </div>
-        `).join('');
-        ui.show('pop-editor');
-    },
-
-    submitQuiz() {
-        let score = 0;
-        this.workingData.forEach((q, i) => {
-            const pick = document.querySelector(`input[name="q${i}"]:checked`);
-            if(pick && parseInt(pick.value) === q.correct) score++;
-        });
-
-        const final = Math.round((score / this.workingData.length) * 10);
-        if(this.userName) this.saveScore(this.userName, final);
-        ui.showResult(final);
-    },
-
-    saveScore(n, s) {
-        let db = JSON.parse(localStorage.getItem('ottn_db') || "[]");
-        db.push({ n, s, t: new Date().toLocaleDateString() });
-        db.sort((a,b) => b.s - a.s);
-        localStorage.setItem('ottn_db', JSON.stringify(db.slice(0, 10)));
-        this.renderLeaderboard();
-    },
-
-    renderLeaderboard() {
-        const db = JSON.parse(localStorage.getItem('ottn_db') || "[]");
-        document.getElementById('leaderboard-ui').innerHTML = db.map((x, i) => `
-            <div style="display:flex; justify-content:space-between; padding:10px; border-bottom:1px solid #eee;">
-                <span>${i+1}. <b>${x.n}</b></span>
-                <span>${x.s} điểm</span>
-            </div>
-        `).join('');
-    },
-
-    runTimer() {
-        let sec = document.getElementById('q-time').value * 60;
-        const timerUI = document.getElementById('display-timer');
-        const iv = setInterval(() => {
+    startTimer(sec) {
+        this.timer = setInterval(() => {
             sec--;
-            let m = Math.floor(sec/60), s = sec % 60;
-            timerUI.innerText = `${m}:${s<10?'0':''}${s}`;
-            if(sec <= 0) { clearInterval(iv); this.submitQuiz(); }
+            let m = Math.floor(sec/60), s = sec%60;
+            document.getElementById('display-timer').innerText = `${m}:${s<10?'0':''}${s}`;
+            if(sec <= 0) this.finishQuiz();
         }, 1000);
     },
 
-    share() { navigator.clipboard.writeText(window.location.href); alert("Link bài làm đã được copy!"); }
+    finishQuiz() {
+        clearInterval(this.timer);
+        localStorage.removeItem('ottn181_save');
+        let s = 0;
+        this.displayQuiz.forEach((q, i) => {
+            const sel = document.querySelector(`input[name="q${i}"]:checked`);
+            if(sel && parseInt(sel.value) === q.correct) s++;
+        });
+        document.getElementById('final-score').innerText = s;
+        document.getElementById('result-text').innerText = `Chúc mừng bạn đã hoàn thành đề thi!`;
+        ui.show('pop-result');
+    },
+
+    saveCurrentState() {
+        this.history = { t: document.getElementById('quiz-title').value, c: document.getElementById('q-count').value, tm: document.getElementById('q-time').value, m: document.getElementById('quiz-mode').value, pr: document.getElementById('ai-prompt').value };
+    },
+
+    restoreSettings() {
+        document.getElementById('quiz-title').value = this.history.t || "";
+        document.getElementById('q-count').value = this.history.c || 10;
+        document.getElementById('q-time').value = this.history.tm || 15;
+        document.getElementById('quiz-mode').value = this.history.m || "normal";
+        document.getElementById('ai-prompt').value = this.history.pr || "";
+        alert("Đã khôi phục cài đặt trước!");
+    },
+
+    runNano() {
+        const c = document.getElementById('nano-canvas'), ctx = c.getContext('2d');
+        let ps = [];
+        const res = () => { c.width = window.innerWidth; c.height = window.innerHeight; };
+        window.onresize = res; res();
+        for(let i=0; i<70; i++) ps.push({x:Math.random()*c.width, y:Math.random()*c.height, v:Math.random()*0.5+0.1});
+        const draw = () => {
+            ctx.clearRect(0,0,c.width,c.height); ctx.fillStyle = "rgba(26,115,232,0.12)";
+            ps.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 1.3, 0, 7); ctx.fill(); p.y += p.v; if(p.y>c.height) p.y=-5; });
+            requestAnimationFrame(draw);
+        };
+        draw();
+    },
+
+    abortProcess() { clearInterval(this.prog); ui.hide('pop-loading'); }
 };
 
 const ui = {
     show(id) { document.getElementById(id).classList.remove('hidden'); },
     hide(id) { document.getElementById(id).classList.add('hidden'); },
-    close(id) { document.getElementById(id).classList.add('hidden'); },
-    showResult(s) {
-        document.getElementById('score-val').innerText = s;
-        document.getElementById('score-msg').innerText = s >= 8 ? "Huy khen: Quá xuất sắc!" : "Cần cố gắng thêm nhé!";
-        this.show('pop-result');
-    }
+    close(id) { document.getElementById(id).classList.add('hidden'); }
 };
 
 app.init();
-  
