@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OTTN181 v1 - Huy Ultimate System</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';</script>
+</head>
+<body>
+    <canvas id="nano-canvas"></canvas>
+
+    <main class="container">
+        <header class="header-main">
+            <h1>OTTN181 <span class="v-tag">v1</span></h1>
+            <p class="author">tác giả Huy ★</p>
+        </header>
+
+        <section id="control-panel" class="square-box active">
+            <h2 class="panel-header">BẢNG ĐIỀU CHỈNH</h2>
+            
+            <div class="control-grid">
+                <div class="input-group full">
+                    <label>Tên bài trắc nghiệm</label>
+                    <input type="text" id="quiz-title" placeholder="Nhập tiêu đề cho đề thi này...">
+                </div>
+
+                <div class="input-group">
+                    <label>Tải file lên</label>
+                    <input type="file" id="file-upload">
+                </div>
+
+                <div class="input-group">
+                    <label>Số câu hỏi</label>
+                    <input type="number" id="q-count" value="10">
+                </div>
+
+                <div class="input-group">
+                    <label>Thời gian (phút)</label>
+                    <input type="number" id="q-time" value="15">
+                </div>
+
+                <div class="input-group">
+                    <label>Chế độ làm bài</label>
+                    <select id="quiz-mode">
+                        <option value="content">Chế độ theo nội dung</option>
+                        <option value="expand">Chế độ mở rộng</option>
+                        <option value="hard">Chế độ khó</option>
+                    </select>
+                </div>
+
+                <div class="input-group full">
+                    <label>Mật khẩu bài làm (Tạo mật khẩu trước khi vào đề)</label>
+                    <input type="password" id="quiz-pass" placeholder="Nhập mật khẩu nếu muốn bảo mật...">
+                </div>
+
+                <div class="input-group full flex-row">
+                    <label class="cb-label"><input type="checkbox" id="mix-q" checked> Xáo trộn câu hỏi</label>
+                    <label class="cb-label"><input type="checkbox" id="mix-a" checked> Xáo trộn câu trả lời</label>
+                </div>
+
+                <div class="input-group full highlight">
+                    <label>Yêu cầu mở rộng/Tạo mới (AI làm bài không theo tài liệu)</label>
+                    <textarea id="ai-prompt" placeholder="Huy muốn AI mở rộng thêm gì? Hoặc yêu cầu AI tạo đề mới hoàn toàn tại đây..."></textarea>
+                </div>
+            </div>
+
+            <div class="actions-grid">
+                <button class="btn-sub" onclick="app.checkEditCondition()">CHỈNH SỬA ĐÁP ÁN</button>
+                <button class="btn-sub" onclick="app.share()">CHIA SẺ</button>
+                <button class="btn-sub" onclick="location.reload()">LÀM LẠI</button>
+                <button id="btn-run" class="btn-gold">KÍCH HOẠT AI & TẠO BÀI</button>
+            </div>
+        </section>
+
+        <section id="workspace" class="hidden">
+            <div class="quiz-status glass">
+                <h3 id="display-title">---</h3>
+                <div id="display-timer">00:00</div>
+            </div>
+            <div id="quiz-render-area"></div>
+            <button id="btn-done" class="btn-gold">NỘP BÀI KẾT THÚC</button>
+        </section>
+
+        <section class="square-box">
+            <h3 class="panel-header">🏆 LỊCH SỬ & XẾP HẠNG</h3>
+            <div id="leaderboard-ui"></div>
+        </section>
+    </main>
+
+    <div id="pop-loading" class="overlay hidden">
+        <div class="popup-box">
+            <div class="loader"></div>
+            <h3>AI ĐANG LÀM VIỆC...</h3>
+            <p id="load-txt">Đang phân tích...</p>
+            <div class="bar-bg"><div id="bar-fill"></div></div>
+        </div>
+    </div>
+
+    <div id="pop-name" class="overlay hidden">
+        <div class="popup-box">
+            <h3>DANH TÍNH NGƯỜI LÀM</h3>
+            <p>Nhập tên trước khi vào làm bài</p>
+            <input type="text" id="user-name" placeholder="Tên của bạn là gì?">
+            <div class="pop-actions">
+                <button class="btn-gold" onclick="app.confirmEntry()">OK BẮT ĐẦU</button>
+                <button class="btn-sub" onclick="app.confirmEntry(true)">BỎ QUA</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="pop-error" class="overlay hidden">
+        <div class="popup-box error">
+            <h3>CẢNH BÁO ĐIỀU KIỆN!</h3>
+            <p>Huy ơi, cần có câu hỏi từ AI trước mới có thể Chỉnh sửa được nhé!</p>
+            <button class="btn-gold" onclick="ui.close('pop-error')">ĐÃ HIỂU (OK)</button>
+        </div>
+    </div>
+
+    <div id="pop-editor" class="overlay hidden">
+        <div class="popup-box wide">
+            <h3>TRÌNH CHỈNH SỬA ĐÁP ÁN</h3>
+            <div id="editor-area" class="scrollable"></div>
+            <button class="btn-gold" onclick="ui.close('pop-editor')">XÁC NHẬN SỬA XONG</button>
+        </div>
+    </div>
+
+    <div id="pop-result" class="overlay hidden">
+        <div class="popup-box">
+            <div class="score-tag" id="score-val">0</div>
+            <h2 id="score-msg">Làm tốt lắm!</h2>
+            <div class="pop-actions">
+                <button class="btn-sub" onclick="location.reload()">LÀM LẠI MỚI</button>
+                <button class="btn-gold" onclick="ui.close('pop-result')">XEM ĐÁP ÁN</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="ai-engine.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
+
