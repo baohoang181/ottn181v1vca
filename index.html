@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OTTN181 v1 - OMNI SUPREME</title>
+    <title>DIAMOND OMNI v3.0 - ARCHITECT</title>
     <link rel="stylesheet" href="style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -14,120 +15,87 @@
 <body>
     <canvas id="nano-canvas"></canvas>
 
-    <main class="container">
-        <header class="header-main">
-            <h1>OTTN181 <span class="v-tag">v1</span></h1>
-            <p class="author">Tác giả Huy ★ Hệ thống AI Diamond</p>
+    <div id="main-app" class="app-window ani-pop-in">
+        <header class="diamond-header">
+            <h1 class="glitch-text">DIAMOND OMNI <span class="v-tag">v3.0</span></h1>
+            <div class="header-line"></div>
         </header>
 
-        <section id="control-panel" class="square-box active">
-            <h2 class="panel-header">BẢNG ĐIỀU CHỈNH GỐC</h2>
+        <nav class="nav-bar">
+            <button class="nav-item active" onclick="ui.switchTab('home')">DASHBOARD</button>
+            <button class="nav-item" onclick="ui.switchTab('history')">LỊCH SỬ & BXH</button>
+        </nav>
+
+        <div id="tab-home" class="tab-content active">
             <div class="control-grid">
-                <div class="input-group full">
-                    <label>Tên bài trắc nghiệm</label>
-                    <input type="text" id="quiz-title" placeholder="Nhập tiêu đề đề thi...">
-                </div>
-                <div class="input-group" id="box-file">
-                    <label>Tải file tài liệu</label>
-                    <input type="file" id="file-upload" accept=".pdf,.docx,.txt">
-                </div>
-                <div class="input-group">
-                    <label>Số câu hỏi</label>
-                    <input type="number" id="q-count" value="10" min="1" max="50">
-                </div>
-                <div class="input-group">
-                    <label>Thời gian (phút)</label>
-                    <input type="number" id="q-time" value="15" min="1">
-                </div>
-                <div class="input-group">
-                    <label>Chế độ AI</label>
-                    <select id="quiz-mode">
-                        <option value="content">Nội dung (Bám sát file)</option>
-                        <option value="expand">Mở rộng (Sáng tạo)</option>
-                        <option value="hard">Khó (Đánh đố logic)</option>
+                <div class="input-field full"><label>Tiêu đề</label><input type="text" id="q-title" value="Kỳ thi Diamond"></div>
+                <div class="input-field" id="file-box"><label>File nguồn</label><input type="file" id="f-upload"></div>
+                <div class="input-field"><label>Số câu</label><input type="number" id="q-count" value="10"></div>
+                <div class="input-field"><label>Thời gian</label><input type="number" id="q-time" value="15"></div>
+                <div class="input-field"><label>Chế độ AI</label>
+                    <select id="q-mode">
+                        <option value="content">Tiêu chuẩn</option>
+                        <option value="hard">Thử thách (Hard)</option>
                     </select>
                 </div>
-                <div class="input-group full">
-                    <label>Mật khẩu bài làm (Tùy chọn)</label>
-                    <input type="password" id="quiz-pass" placeholder="Mật khẩu bảo vệ đề...">
-                </div>
-                <div class="input-group full flex-row">
-                    <label class="cb-item"><input type="checkbox" id="mix-q" checked> Xáo trộn câu hỏi</label>
-                    <label class="cb-item"><input type="checkbox" id="mix-a" checked> Xáo trộn đáp án</label>
-                </div>
-                <div class="input-group full highlight" id="box-prompt">
-                    <label>Khung yêu cầu mở rộng / Nội dung dán trực tiếp</label>
-                    <textarea id="ai-prompt" placeholder="Nhập yêu cầu chi tiết cho AI hoặc dán nội dung tại đây..."></textarea>
-                </div>
+                <textarea id="q-prompt" class="full" placeholder="Dán nội dung hoặc yêu cầu bổ sung..."></textarea>
             </div>
-            <div class="actions-grid">
-                <button class="btn-sub" onclick="app.checkEditCondition()">CHỈNH SỬA</button>
-                <button class="btn-sub" onclick="app.showLeaderboard()">BẢNG XẾP HẠNG</button>
-                <button class="btn-sub" onclick="app.restoreSettings()">LÀM LẠI</button>
-                <button id="btn-run" class="btn-gold">KÍCH HOẠT HỆ THỐNG AI</button>
+            <div class="btn-group">
+                <button class="btn-sub" onclick="app.openEditor()">EDITOR</button>
+                <button id="btn-run" class="btn-gold">KÍCH HOẠT HỆ THỐNG</button>
             </div>
-        </section>
+        </div>
 
-        <section id="workspace" class="hidden">
-            <div class="workspace-header glass">
-                <h3 id="display-title">---</h3>
-                <div id="display-timer">00:00</div>
-            </div>
-            <div id="quiz-render-area"></div>
-            <button id="btn-submit" class="btn-gold">NỘP BÀI & XUẤT PDF KẾT QUẢ</button>
-        </section>
+        <div id="tab-history" class="tab-content">
+            <div class="history-container custom-scroll" id="history-list">
+                </div>
+        </div>
+    </div>
 
-        <section id="leaderboard-section" class="square-box hidden">
-            <h2 class="panel-header">BẢNG XẾP HẠNG THÀNH TÍCH</h2>
-            <div class="table-wrapper">
-                <table id="lb-table">
-                    <thead>
-                        <tr><th>Hạng</th><th>Họ Tên</th><th>Điểm số</th><th>Ngày làm</th></tr>
-                    </thead>
-                    <tbody id="lb-body"></tbody>
-                </table>
+    <div id="pop-workspace" class="overlay hidden">
+        <div class="workspace-window ani-pop-in">
+            <div class="ws-header">
+                <h2 id="ws-title">---</h2>
+                <div id="ws-timer">00:00</div>
             </div>
-            <button class="btn-sub" onclick="app.goHome()">QUAY LẠI TRANG CHỦ</button>
-        </section>
-    </main>
+            <div id="ws-body" class="custom-scroll"></div>
+            <div class="ws-footer">
+                <button class="btn-gold" onclick="app.submit()">NỘP BÀI & XUẤT PDF</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="pop-alert" class="overlay hidden">
+        <div class="alert-box">
+            <div id="alert-icon">!</div>
+            <h3 id="alert-title">THÔNG BÁO</h3>
+            <p id="alert-msg">Nội dung...</p>
+            <button class="btn-gold" id="alert-ok">XÁC NHẬN</button>
+        </div>
+    </div>
 
     <div id="pop-loading" class="overlay hidden">
-        <div class="popup-box">
-            <div class="loader-ai"></div>
-            <h3>AI ĐANG PHÂN TÍCH DỮ LIỆU</h3>
-            <div class="bar-bg"><div id="bar-fill"></div></div>
-            <div class="pop-footer-btns">
-                <button class="btn-sub" onclick="app.abortProcess()">DỪNG LẠI</button>
-                <button class="btn-sub" onclick="ui.hide('pop-loading')">CHỜ TIẾP</button>
-            </div>
+        <div class="loading-box">
+            <div class="diamond-loader"></div>
+            <p id="load-status">Đang mô phỏng dữ liệu...</p>
+            <div class="p-bar"><div id="p-fill"></div></div>
         </div>
     </div>
 
     <div id="pop-editor" class="overlay hidden">
-        <div class="popup-box wide">
-            <button class="btn-x-left" onclick="app.editorBack()">✕</button>
-            <h3 id="edit-header">Trình chỉnh sửa nội dung</h3>
-            <div id="edit-main-content"></div>
-            <div class="pop-actions-left">
-                <button class="btn-gold hidden" id="btn-save-edit">LƯU THAY ĐỔI</button>
-            </div>
+        <div class="editor-window">
+            <button class="btn-x" onclick="ui.hide('pop-editor')">✕</button>
+            <h3>TRÌNH CHỈNH SỬA</h3>
+            <div id="edit-area" class="custom-scroll"></div>
+            <div class="edit-footer"><button id="btn-save-edit" class="btn-gold hidden">LƯU THAY ĐỔI</button></div>
         </div>
     </div>
 
-    <div id="pop-congrats" class="overlay hidden">
-        <div class="popup-box">
-            <div class="icon-win">✨</div>
-            <h3>HOÀN TẤT DỮ LIỆU</h3>
-            <p>Hệ thống đã sẵn sàng cho bài thi của Huy.</p>
-            <button class="btn-gold" onclick="app.openNamePopup()">BẮT ĐẦU</button>
-        </div>
-    </div>
-
-    <div id="pop-name" class="overlay hidden">
-        <div class="popup-box">
-            <h3>XÁC NHẬN DANH TÍNH</h3>
-            <input type="text" id="user-name" placeholder="Nhập tên của bạn...">
-            <button class="btn-gold" onclick="app.enterWorkspace()">VÀO PHÒNG THI</button>
+    <div id="pop-auth" class="overlay hidden">
+        <div class="auth-box">
+            <h3>DANH TÍNH</h3>
+            <input type="text" id="u-name" placeholder="Nhập tên của bạn...">
+            <button class="btn-gold" onclick="app.verifyAndStart()">BẮT ĐẦU NGAY</button>
         </div>
     </div>
 
