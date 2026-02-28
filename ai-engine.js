@@ -1,72 +1,68 @@
-/** * AI CORE V3.0 - ARCHITECT EDITION 
- * Tự động soi chiếu và sửa lỗi dữ liệu hàng triệu lần 
+/** * DIAMOND AI CORE v6.0
+ * Đặc tính: Chống ảo giác (Anti-Hallucination), JSON Guardian, AI Insight
  */
-const AICore = {
+const AI_ENGINE = {
     KEY: "AIzaSyDuSu1OQGeJhryW5HTGG46pNPCBUigjVJ8",
     MODEL: "gemini-1.5-flash",
 
-    async analyze(cfg) {
-        const { text, prompt, count, mode } = cfg;
-        const system = `Role: Diamond Expert. Task: Generate ${count} quiz items. Mode: ${mode}. Instruction: ${prompt}. Return ONLY JSON Array. Format: [{"question":"","options":["","","",""],"correct":0}]`;
+    async generate(config) {
+        const { text, count, mode, prompt } = config;
+        const system = `BẠN LÀ AI DIAMOND ARCHITECT. 
+        NHIỆM VỤ: Dựa TUYỆT ĐỐI vào văn bản nguồn để tạo ${count} câu hỏi trắc nghiệm.
+        CHẾ ĐỘ: ${mode}. YÊU CẦU RIÊNG: ${prompt}.
+        CẤU TRÚC: Trả về JSON Array: [{"question":"","options":["","","",""],"correct":0}].
+        CẤM: Không trả về câu hỏi "Mô phỏng", chỉ lấy từ nội dung nguồn.`;
 
         try {
-            const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${this.MODEL}:generateContent?key=${this.KEY}`, {
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${this.MODEL}:generateContent?key=${this.KEY}`, {
                 method: "POST",
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: `${system}\nSource: ${text.substring(0, 30000)}` }] }]
-                })
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contents: [{ parts: [{ text: `${system}\n\nNGUỒN:\n${text}` }] }] })
             });
-
-            if(!resp.ok) throw "API_ERR";
-            const data = await resp.json();
+            const data = await res.json();
             const raw = data.candidates[0].content.parts[0].text;
-            
-            // Xử lý làm sạch dữ liệu cấp cao
-            const jsonText = raw.replace(/```json|```/g, "").trim();
-            const result = JSON.parse(jsonText);
-
-            return this.validate(result, count);
-        } catch (e) {
-            console.warn("AI sập, kích hoạt Diamond Backup...");
-            return this.getMock(count);
-        }
+            return this.guardian(raw, count);
+        } catch (e) { return null; }
     },
 
-    validate(data, count) {
-        if(!Array.isArray(data)) return this.getMock(count);
-        return data.slice(0, count).map(q => ({
-            question: q.question || "Câu hỏi lỗi nội dung?",
-            options: q.options && q.options.length === 4 ? q.options : ["A", "B", "C", "D"],
-            correct: typeof q.correct === 'number' ? q.correct : 0
-        }));
+    // JSON Guardian: Trích xuất và sửa lỗi dữ liệu
+    guardian(str, count) {
+        try {
+            const match = str.match(/\[[\s\S]*\]/);
+            if (!match) return null;
+            let data = JSON.parse(match[0]);
+            return data.slice(0, count).map(q => ({
+                question: q.question || "Lỗi trích xuất câu hỏi",
+                options: q.options.length === 4 ? q.options : ["A","B","C","D"],
+                correct: Number.isInteger(q.correct) ? q.correct : 0
+            }));
+        } catch (e) { return null; }
     },
 
-    getMock(n) {
-        return Array.from({length: n}, (_, i) => ({
-            question: `[MÔ PHỎNG] Câu hỏi kiến thức Diamond số ${i+1}?`,
-            options: ["Lựa chọn A", "Lựa chọn B", "Lựa chọn C", "Lựa chọn D"],
-            correct: 0
-        }));
+    // MỚI: AI Insight - Phân tích lý do Huy sai
+    async getInsight(results, source) {
+        const prompt = `Dựa vào kết quả thi: ${JSON.stringify(results)} và văn bản nguồn. 
+        Hãy đưa ra 2 câu nhận xét ngắn gọn về điểm mạnh và điểm cần cải thiện của người học.`;
+        try {
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${this.MODEL}:generateContent?key=${this.KEY}`, {
+                method: "POST",
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+            });
+            const data = await res.json();
+            return data.candidates[0].content.parts[0].text;
+        } catch (e) { return "AI không thể phân tích lúc này."; }
     },
 
     async read(file) {
         const ext = file.name.split('.').pop().toLowerCase();
-        if(ext === 'txt') return await file.text();
-        if(ext === 'docx') {
-            const res = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
-            return res.value;
-        }
-        if(ext === 'pdf') {
+        if (ext === 'txt') return await file.text();
+        if (ext === 'docx') return (await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() })).value;
+        if (ext === 'pdf') {
             const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
-            let str = "";
-            for(let i=1; i<=pdf.numPages; i++) {
-                const page = await pdf.getPage(i);
-                const content = await page.getTextContent();
-                str += content.items.map(s => s.str).join(" ");
-            }
-            return str;
+            let t = "";
+            for (let i = 1; i <= pdf.numPages; i++) t += (await (await pdf.getPage(i)).getTextContent()).items.map(s => s.str).join(" ");
+            return t;
         }
-        return "";
     }
 };
