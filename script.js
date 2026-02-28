@@ -1,198 +1,247 @@
-/** * DIAMOND ORCHESTRATOR v6.0
- * Quản lý: 3 Danh mục, 100% Tính năng cũ, 3 Tính năng mới
+/** * DIAMOND ORCHESTRATOR v5.0
+ * Quản lý: Trạng thái, Lưu trữ, 3 Danh mục
  */
 const app = {
-    quiz: [], activeQuiz: [], timer: null, startT: null, userName: "",
+    coreQuiz: [],     // Dữ liệu AI trả về
+    activeQuiz: [],   // Dữ liệu dùng để thi (đã xáo trộn/sửa)
+    timer: null,
+    startTime: null,
 
     init() {
-        this.renderBg();
-        this.loadData();
-        setInterval(() => document.getElementById('system-clock').innerText = new Date().toLocaleTimeString(), 1000);
-        // Recovery System: Khôi phục nếu đang thi mà bị reload
-        const saved = localStorage.getItem('d_session');
-        if (saved) ui.confirm("KHÔI PHỤC", "Huy có muốn làm tiếp bài thi đang dở không?", () => this.resume(JSON.parse(saved)));
+        this.renderParticles();
+        this.updateDataViews();
+        // Storage Guardian: Tự khôi phục nếu dữ liệu hỏng
+        if (!localStorage.getItem('d_history')) localStorage.setItem('d_history', '[]');
     },
 
-    // 1. LUỒNG CHÍNH
-    async generateFlow() {
-        const file = document.getElementById('in-file').files[0];
-        const prompt = document.getElementById('in-prompt').value;
-        if (!file && !prompt) return ui.alert("THIẾU DỮ LIỆU", "Huy hãy cung cấp file hoặc văn bản nhé.");
+    // 1. LUỒNG TẠO ĐỀ AI
+    async generateAI() {
+        const file = document.getElementById('cfg-file').files[0];
+        const prompt = document.getElementById('cfg-prompt').value;
+        if (!file && !prompt) return ui.alert("LỖI", "Huy cần cung cấp file hoặc yêu cầu.");
 
-        ui.show('layer-load');
-        ui.progress(0, 90, 4000);
+        ui.show('pop-loading');
+        ui.progress(0, 95, 4000);
 
-        const text = file ? await AI_ENGINE.read(file) : prompt;
-        this.sourceText = text; // Lưu lại để AI Insight dùng
-        const res = await AI_ENGINE.generate({
-            text, count: document.getElementById('in-count').value,
-            mode: document.getElementById('in-mode').value, prompt
+        const sourceText = file ? await AI_ENGINE.parseFile(file) : prompt;
+        const result = await AI_ENGINE.analyze({
+            text: sourceText,
+            count: document.getElementById('cfg-count').value,
+            mode: document.getElementById('cfg-mode').value,
+            userPrompt: prompt
         });
 
-        if (res) {
-            this.quiz = res; this.activeQuiz = JSON.parse(JSON.stringify(res));
-            ui.progress(90, 100, 500, () => { ui.hide('layer-load'); ui.show('layer-pre'); });
+        if (result && result.length > 0) {
+            this.coreQuiz = result;
+            this.activeQuiz = JSON.parse(JSON.stringify(result)); // Deep Clone
+            ui.progress(95, 100, 500, () => {
+                ui.hide('pop-loading');
+                ui.show('pop-pre-exam'); // Hiện bảng 3 nút
+            });
         } else {
-            ui.hide('layer-load'); ui.alert("LỖI AI", "AI gặp khó khăn khi đọc file. Huy thử lại nhé.");
+            ui.hide('pop-loading');
+            ui.alert("LỖI AI", "AI không trích xuất được câu trả lời từ file. Huy hãy kiểm tra lại file nhé!");
         }
     },
 
-    // 2. PRE-EXAM & EDITOR (Xáo trộn, Sửa)
-    shuffleQ() { this.activeQuiz.sort(() => Math.random() - 0.5); ui.alert("DIAMOND", "Đã xáo trộn câu hỏi."); },
-    shuffleA() {
-        this.activeQuiz.forEach(q => {
-            const correctText = q.options[q.correct];
-            q.options.sort(() => Math.random() - 0.5);
-            q.correct = q.options.indexOf(correctText);
-        });
-        ui.alert("DIAMOND", "Đã xáo trộn đáp án.");
+    // 2. CHỨC NĂNG PRE-EXAM (XÁO TRỘN & SỬA)
+    shuffle(mode) {
+        if (mode === 'Q') {
+            this.activeQuiz.sort(() => Math.random() - 0.5);
+            ui.alert("THÀNH CÔNG", "Đã xáo trộn thứ tự câu hỏi.");
+        } else {
+            this.activeQuiz.forEach(q => {
+                const correctText = q.options[q.correct];
+                q.options.sort(() => Math.random() - 0.5);
+                q.correct = q.options.indexOf(correctText);
+            });
+            ui.alert("THÀNH CÔNG", "Đã xáo trộn các đáp án.");
+        }
     },
+
     openEditor() {
-        const body = document.getElementById('ed-body');
-        body.innerHTML = this.activeQuiz.map((q, i) => `
-            <div class="ed-card" style="margin-bottom:20px; padding:15px; border:1px solid #eee; border-radius:15px">
-                <textarea onchange="app.activeQuiz[${i}].question=this.value" style="width:100%">${q.question}</textarea>
-                ${q.options.map((o, j) => `<input type="text" onchange="app.activeQuiz[${i}].options[${j}]=this.value" value="${o}" style="display:block; margin:5px 0; width:100%">`).join('')}
+        const view = document.getElementById('editor-view');
+        view.innerHTML = this.activeQuiz.map((q, i) => `
+            <div class="edit-card" onclick="app.loadToEdit(${i})">
+                <b>Câu ${i+1}:</b> ${q.question.substring(0, 60)}...
             </div>
         `).join('');
-        ui.show('layer-editor');
+        ui.show('pop-editor');
     },
 
-    // 3. WORKSPACE (Không gian làm bài)
-    startExam() {
-        this.userName = document.getElementById('user-name').value;
-        if (!this.userName) return ui.alert("LỖI", "Huy nhập tên để ghi danh nhé.");
-        ui.hide('layer-pre'); ui.show('layer-work');
-        this.startT = new Date();
-        document.getElementById('ws-title').innerText = document.getElementById('in-title').value || "Kỳ thi Diamond";
-        this.renderWS();
-        this.startClock(document.getElementById('in-time').value * 60);
+    loadToEdit(idx) {
+        const q = this.activeQuiz[idx];
+        const view = document.getElementById('editor-view');
+        document.getElementById('save-edit-btn').classList.remove('hidden');
+        view.innerHTML = `
+            <div class="edit-form">
+                <textarea id="temp-q">${q.question}</textarea>
+                ${q.options.map((o, i) => `
+                    <div class="opt-row">
+                        <input type="radio" name="temp-c" value="${i}" ${i === q.correct ? 'checked' : ''}>
+                        <input type="text" id="temp-o${i}" value="${o}">
+                    </div>
+                `).join('')}
+                <button class="btn-primary-diamond" onclick="app.saveEdit(${idx})">LƯU CÂU HỎI NÀY</button>
+            </div>
+        `;
     },
 
-    renderWS() {
-        const b = document.getElementById('ws-body');
-        b.innerHTML = this.activeQuiz.map((q, i) => `
-            <div class="q-card-ws ani-slide-up" style="padding:30px; border-bottom:1px solid #f0f0f0">
-                <h3>Câu ${i+1}: ${q.question}</h3>
-                <div class="opts-ws" style="margin-top:20px">
-                    ${q.options.map((o, j) => `<label style="display:block; margin:15px 0; cursor:pointer"><input type="radio" name="q${i}" value="${j}" onchange="app.saveSession()"> ${o}</label>`).join('')}
+    saveEdit(idx) {
+        this.activeQuiz[idx].question = document.getElementById('temp-q').value;
+        this.activeQuiz[idx].options = [0,1,2,3].map(i => document.getElementById(`temp-o${i}`).value);
+        this.activeQuiz[idx].correct = parseInt(document.querySelector('input[name="temp-c"]:checked').value);
+        this.openEditor();
+    },
+
+    // 3. KHÔNG GIAN LÀM BÀI (WORKSPACE)
+    launchWorkspace() {
+        const name = document.getElementById('user-name').value;
+        if (!name) return ui.alert("THIẾU TÊN", "Huy nhập tên để hệ thống ghi nhận kết quả nhé.");
+
+        this.userName = name;
+        this.startTime = new Date();
+        ui.hide('pop-pre-exam');
+        ui.show('pop-workspace');
+        document.getElementById('ws-display-title').innerText = document.getElementById('cfg-title').value || "Bài thi Diamond";
+        
+        this.renderExam();
+        this.startTimer(document.getElementById('cfg-time').value * 60);
+    },
+
+    renderExam() {
+        const container = document.getElementById('ws-content');
+        container.innerHTML = this.activeQuiz.map((q, i) => `
+            <div class="q-wrap ani-item">
+                <h4>Câu ${i+1}: ${q.question}</h4>
+                <div class="opts">
+                    ${q.options.map((o, j) => `
+                        <label><input type="radio" name="q${i}" value="${j}"> ${o}</label>
+                    `).join('')}
                 </div>
             </div>
         `).join('');
+        gsap.from('.ani-item', { opacity: 0, x: 20, stagger: 0.1 });
     },
 
-    saveSession() {
-        const answers = this.activeQuiz.map((_, i) => {
-            const r = document.querySelector(`input[name="q${i}"]:checked`);
-            return r ? r.value : null;
+    triggerExit() {
+        ui.confirm("THOÁT BÀI THI?", "Mọi tiến trình làm bài của Huy sẽ bị hủy. Huy có chắc không?", () => {
+            clearInterval(this.timer);
+            ui.hide('pop-workspace');
         });
-        localStorage.setItem('d_session', JSON.stringify({ name: this.userName, answers, quiz: this.activeQuiz, title: document.getElementById('ws-title').innerText }));
     },
 
-    async submitExam() {
+    submitQuiz() {
         clearInterval(this.timer);
-        localStorage.removeItem('d_session');
         let score = 0;
-        const userResults = this.activeQuiz.map((q, i) => {
+        this.activeQuiz.forEach((q, i) => {
             const sel = document.querySelector(`input[name="q${i}"]:checked`);
-            const isCorrect = sel && parseInt(sel.value) === q.correct;
-            if (isCorrect) score++;
-            return { q: q.question, correct: isCorrect };
+            if (sel && parseInt(sel.value) === q.correct) score++;
         });
 
-        ui.show('layer-load');
-        document.getElementById('load-text').innerText = "AI đang phân tích kết quả...";
-        const insight = await AI_ENGINE.getInsight(userResults, this.sourceText);
-        
-        ui.hide('layer-load');
-        this.showResult(score, insight);
-        this.recordData(score);
+        this.recordResult(score);
+        ui.alert("HOÀN THÀNH", `Huy đạt ${score}/${this.activeQuiz.length} điểm. Kết quả đã được lưu!`, () => location.reload());
     },
 
-    showResult(score, insight) {
-        ui.show('layer-result');
-        document.getElementById('res-score').innerText = `${score}/${this.activeQuiz.length}`;
-        document.getElementById('res-name').innerText = this.userName;
-        document.getElementById('res-insight').innerText = insight;
-    },
-
-    confirmExit() {
-        ui.confirm("THOÁT BÀI THI?", "Dữ liệu chưa nộp sẽ bị mất. Huy có chắc không?", () => {
-            clearInterval(this.timer); localStorage.removeItem('d_session'); location.reload();
-        });
-    },
-
-    // 4. STORAGE & TABS
-    recordData(score) {
+    // 4. QUẢN LÝ 3 DANH MỤC & STORAGE
+    recordResult(score) {
         const now = new Date();
-        const duration = Math.floor((now - this.startT) / 1000);
-        const log = {
-            name: this.userName, title: document.getElementById('ws-title').innerText,
-            score, total: this.activeQuiz.length,
-            time: `${Math.floor(duration/60)}p ${duration%60}s`,
-            rawSec: duration, date: now.toLocaleString(), startAt: this.startT.toLocaleTimeString()
+        const diff = Math.floor((now - this.startTime) / 1000);
+        const result = {
+            name: this.userName,
+            title: document.getElementById('cfg-title').value || "Chưa đặt tên",
+            score: score,
+            total: this.activeQuiz.length,
+            timeStr: `${Math.floor(diff/60)}p ${diff%60}s`,
+            durationSec: diff,
+            startTime: this.startTime.toLocaleTimeString(),
+            fullDate: now.toLocaleString()
         };
-        let h = JSON.parse(localStorage.getItem('d_history') || '[]');
-        h.unshift(log);
-        localStorage.setItem('d_history', JSON.stringify(h.slice(0, 50)));
-        this.loadData();
+
+        const history = JSON.parse(localStorage.getItem('d_history'));
+        history.unshift(result);
+        localStorage.setItem('d_history', JSON.stringify(history.slice(0, 50)));
+        this.updateDataViews();
     },
 
-    loadData() {
-        const h = JSON.parse(localStorage.getItem('d_history') || '[]');
-        const rank = [...h].sort((a,b) => b.score - a.score || a.rawSec - b.rawSec);
+    updateDataViews() {
+        const history = JSON.parse(localStorage.getItem('d_history') || '[]');
         
-        document.getElementById('rank-render').innerHTML = `
-            <div class="rank-item" style="font-weight:900; color:#1e88e5"><span>#</span><span>TÊN</span><span>ĐIỂM</span><span>THỜI GIAN</span><span>BẮT ĐẦU</span></div>
-            ${rank.map((it, i) => `<div class="rank-item"><span>${i+1}</span><b>${it.name}</b><span>${it.score}/${it.total}</span><span>${it.time}</span><span>${it.startAt}</span></div>`).join('')}
+        // BXH: Ưu tiên điểm cao, sau đó là thời gian làm nhanh nhất
+        const sorted = [...history].sort((a,b) => b.score - a.score || a.durationSec - b.durationSec);
+        document.getElementById('render-leaderboard').innerHTML = `
+            <div class="list-head item-grid"><span>#</span><span>Tên</span><span>Điểm</span><span>Thời gian</span><span>Bắt đầu</span></div>
+            ${sorted.map((it, i) => `
+                <div class="list-item item-grid">
+                    <b>${i+1}</b><span>${it.name}</span><b>${it.score}/${it.total}</b><span>${it.timeStr}</span><span>${it.startTime}</span>
+                </div>
+            `).join('')}
         `;
-        document.getElementById('logs-render').innerHTML = h.map(it => `<div class="rank-item"><span>${it.date}</span><b>${it.title}</b><span>${it.name}</span><b>${it.score}/${it.total}</b><span>${it.time}</span></div>`).join('');
+
+        // Lịch sử: Hiện toàn bộ chi tiết
+        document.getElementById('render-history').innerHTML = history.map(it => `
+            <div class="list-item history-grid">
+                <span>${it.fullDate}</span><b>${it.title}</b><span>${it.name}</span><b>${it.score}/${it.total}</b>
+            </div>
+        `).join('');
     },
 
-    // UTILS
-    startClock(s) {
-        const el = document.getElementById('ws-clock');
+    // TIỆN ÍCH
+    startTimer(sec) {
+        const el = document.getElementById('ws-timer');
         this.timer = setInterval(() => {
-            s--;
-            let m = Math.floor(s/60), sec = s%60;
-            el.innerText = `${m}:${sec < 10 ? '0' : ''}${sec}`;
-            if (s <= 0) this.submitExam();
+            sec--;
+            let m = Math.floor(sec/60), s = sec%60;
+            el.innerText = `${m}:${s<10?'0':''}${s}`;
+            if (sec < 60) el.style.color = '#ff4757';
+            if (sec <= 0) this.submitQuiz();
         }, 1000);
     },
 
-    exportCert() {
-        html2canvas(document.getElementById('certificate-area')).then(canvas => {
-            const link = document.createElement('a');
-            link.download = `Diamond_Result_${this.userName}.png`;
-            link.href = canvas.toDataURL();
-            link.click();
-        });
-    },
-
-    renderBg() {
+    renderParticles() {
         const c = document.getElementById('diamond-bg'), ctx = c.getContext('2d');
         const resize = () => { c.width = window.innerWidth; c.height = window.innerHeight; };
         window.onresize = resize; resize();
-        let pts = Array.from({length: 30}, () => ({x: Math.random()*c.width, y: Math.random()*c.height, v: Math.random()*0.4 + 0.1}));
-        const draw = () => {
-            ctx.clearRect(0,0,c.width,c.height); ctx.fillStyle = "rgba(30,136,229,0.15)";
-            pts.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, 7); ctx.fill(); p.y -= p.v; if(p.y < 0) p.y = c.height; });
-            requestAnimationFrame(draw);
-        }; draw();
+        let pts = Array.from({length: 40}, () => ({x: Math.random()*c.width, y: Math.random()*c.height, v: Math.random()*0.5 + 0.2, r: Math.random()*2}));
+        const anim = () => {
+            ctx.clearRect(0,0,c.width,c.height);
+            ctx.fillStyle = "rgba(30, 136, 229, 0.2)";
+            pts.forEach(p => {
+                ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
+                p.y -= p.v; if(p.y < 0) p.y = c.height;
+            });
+            requestAnimationFrame(anim);
+        };
+        anim();
     }
 };
 
 const ui = {
-    show(id) { document.getElementById(id).classList.remove('hidden'); },
+    show(id) { document.getElementById(id).classList.remove('hidden'); gsap.from(`#${id} .pop-card`, { scale: 0.8, opacity: 0, duration: 0.4 }); },
     hide(id) { document.getElementById(id).classList.add('hidden'); },
-    switchTab(tab) {
-        document.querySelectorAll('.t-btn, .tab-content').forEach(e => e.classList.remove('active'));
-        document.querySelector(`[onclick="ui.switchTab('${tab}')"]`).classList.add('active');
-        document.getElementById(`tab-${tab}`).classList.add('active');
+    tab(id) {
+        document.querySelectorAll('.nav-btn, .tab-panel').forEach(el => el.classList.remove('active'));
+        document.querySelector(`[onclick="ui.tab('${id}')"]`).classList.add('active');
+        document.getElementById(`tab-${id}`).classList.add('active');
     },
-    alert(t, m) { this.show('layer-alert'); document.getElementById('alt-title').innerText = t; document.getElementById('alt-msg').innerText = m; document.getElementById('alt-cancel').classList.add('hidden'); document.getElementById('alt-ok').onclick = () => this.hide('layer-alert'); },
-    confirm(t, m, cb) { this.show('layer-alert'); document.getElementById('alt-title').innerText = t; document.getElementById('alt-msg').innerText = m; document.getElementById('alt-cancel').classList.remove('hidden'); document.getElementById('alt-cancel').onclick = () => this.hide('layer-alert'); document.getElementById('alt-ok').onclick = () => { this.hide('layer-alert'); cb(); }; },
-    progress(f, t, d, cb) { gsap.to('#prog-fill', { width: t + "%", duration: d/1000, onComplete: cb }); }
+    alert(title, body, cb) {
+        this.show('pop-msg');
+        document.getElementById('msg-title').innerText = title;
+        document.getElementById('msg-body').innerText = body;
+        document.getElementById('msg-cancel-btn').classList.add('hidden');
+        document.getElementById('msg-ok-btn').onclick = () => { this.hide('pop-msg'); if(cb) cb(); };
+    },
+    confirm(title, body, cb) {
+        this.show('pop-msg');
+        document.getElementById('msg-title').innerText = title;
+        document.getElementById('msg-body').innerText = body;
+        document.getElementById('msg-cancel-btn').classList.remove('hidden');
+        document.getElementById('msg-cancel-btn').onclick = () => this.hide('pop-msg');
+        document.getElementById('msg-ok-btn').onclick = () => { this.hide('pop-msg'); cb(); };
+    },
+    progress(from, to, dur, cb) {
+        gsap.to('#load-progress', { width: to + "%", duration: dur/1000, onComplete: cb });
+    }
 };
 
 app.init();
