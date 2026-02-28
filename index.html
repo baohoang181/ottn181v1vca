@@ -3,128 +3,116 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DIAMOND OMNI v6.0 | ARCHITECT EDITION</title>
+    <title>DIAMOND OMNI v5.0 | THỰC THỂ TỰ TIẾN HÓA</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
 <body>
     <canvas id="diamond-bg"></canvas>
 
-    <div id="main-shell" class="ani-fade-in">
-        <header class="app-header">
-            <div class="brand">
-                <div class="diamond-logo"></div>
-                <h1>DIAMOND <span>OMNI</span></h1>
+    <div id="app-shell" class="ani-reveal">
+        <header class="main-header">
+            <div class="logo-group">
+                <h1 class="diamond-text">DIAMOND <span>OMNI</span></h1>
+                <div class="version-tag">V5.0 ARCHITECT</div>
             </div>
-            <div id="system-clock">00:00:00</div>
+            <div class="system-status"><span class="pulse"></span> AI ACTIVE</div>
         </header>
 
-        <nav class="master-tabs">
-            <button class="t-btn active" onclick="ui.switchTab('dash')">BẢNG ĐIỀU KHIỂN</button>
-            <button class="t-btn" onclick="ui.switchTab('rank')">BẢNG XẾP HẠNG</button>
-            <button class="t-btn" onclick="ui.switchTab('logs')">LỊCH SỬ CHI TIẾT</button>
+        <nav class="master-nav">
+            <button class="nav-btn active" onclick="ui.tab('dashboard')">BẢNG ĐIỀU KHIỂN</button>
+            <button class="nav-btn" onclick="ui.tab('leaderboard')">BẢNG XẾP HẠNG</button>
+            <button class="nav-btn" onclick="ui.tab('history')">LỊCH SỬ THI</button>
         </nav>
 
-        <main class="viewport">
-            <section id="tab-dash" class="tab-content active">
+        <main class="content-frame">
+            <section id="tab-dashboard" class="tab-panel active">
                 <div class="config-grid">
-                    <div class="field full"><label>Tiêu đề bài thi</label><input type="text" id="in-title" placeholder="Nhập tên kỳ thi..."></div>
-                    <div class="field"><label>Tài liệu nguồn</label><input type="file" id="in-file" accept=".pdf,.docx,.txt"></div>
-                    <div class="field"><label>Số lượng câu</label><input type="number" id="in-count" value="10"></div>
-                    <div class="field"><label>Thời gian (phút)</label><input type="number" id="in-time" value="15"></div>
-                    <div class="field"><label>Chế độ AI</label>
-                        <select id="in-mode">
-                            <option value="Logical">Logic chặt chẽ</option>
-                            <option value="Creative">Sáng tạo & Mở rộng</option>
+                    <div class="input-box full"><label>Tên bài thi</label><input type="text" id="cfg-title" placeholder="Ví dụ: Kiểm tra cuối kỳ..."></div>
+                    <div class="input-box"><label>Tài liệu nguồn (PDF, DOCX, TXT)</label><input type="file" id="cfg-file" accept=".pdf,.docx,.txt"></div>
+                    <div class="input-box"><label>Số câu hỏi</label><input type="number" id="cfg-count" value="10" min="1" max="50"></div>
+                    <div class="input-box"><label>Thời gian (phút)</label><input type="number" id="cfg-time" value="15"></div>
+                    <div class="input-box"><label>Độ khó logic</label>
+                        <select id="cfg-mode">
+                            <option value="Standard">Tiêu chuẩn</option>
+                            <option value="Hard">Chuyên gia (Bẫy logic)</option>
                         </select>
                     </div>
-                    <div class="field full"><label>Ghi chú cho AI</label><textarea id="in-prompt" placeholder="Ví dụ: Tập trung vào chương 1..."></textarea></div>
+                    <div class="input-box full"><label>Yêu cầu riêng cho AI (Prompt)</label><textarea id="cfg-prompt" placeholder="Huy muốn AI tập trung vào kiến thức nào?"></textarea></div>
                 </div>
-                <button class="btn-glow" onclick="app.generateFlow()">KÍCH HOẠT HỆ THỐNG AI</button>
+                <button class="btn-primary-diamond" onclick="app.generateAI()">KÍCH HOẠT DIAMOND CORE</button>
             </section>
 
-            <section id="tab-rank" class="tab-content">
-                <div class="rank-container" id="rank-render"></div>
+            <section id="tab-leaderboard" class="tab-panel">
+                <div class="list-wrapper" id="render-leaderboard"></div>
             </section>
 
-            <section id="tab-logs" class="tab-content">
-                <div class="history-list" id="logs-render"></div>
+            <section id="tab-history" class="tab-panel">
+                <div class="list-wrapper" id="render-history"></div>
             </section>
         </main>
     </div>
 
-    <div id="layer-load" class="overlay hidden">
-        <div class="pop-card loader-card">
-            <div class="gem-spinner"></div>
-            <h2 id="load-text">Đang phân tích dữ liệu...</h2>
-            <div class="prog-bar"><div id="prog-fill"></div></div>
+    <div id="pop-loading" class="overlay hidden">
+        <div class="pop-card glass-morph">
+            <div class="diamond-loader"></div>
+            <h3 id="load-msg">Đang đồng bộ AI...</h3>
+            <div class="track-bg"><div id="load-progress"></div></div>
         </div>
     </div>
 
-    <div id="layer-pre" class="overlay hidden">
-        <div class="pop-card wide">
-            <h3>CẤU HÌNH TRƯỚC KHI THI</h3>
-            <div class="setup-btns">
-                <button onclick="app.shuffleQ()">XÁO TRỘN CÂU HỎI</button>
-                <button onclick="app.shuffleA()">XÁO TRỘN ĐÁP ÁN</button>
-                <button class="btn-edit" onclick="app.openEditor()">CHỈNH SỬA ĐỀ THI</button>
+    <div id="pop-pre-exam" class="overlay hidden">
+        <div class="pop-card wide ani-slide-up">
+            <h2>CẤU HÌNH ĐỀ THI</h2>
+            <div class="pre-exam-actions">
+                <button class="btn-action-outline" onclick="app.shuffle('Q')">XÁO TRỘN CÂU HỎI</button>
+                <button class="btn-action-outline" onclick="app.shuffle('A')">XÁO TRỘN ĐÁP ÁN</button>
+                <button class="btn-action-outline highlight" onclick="app.openEditor()">CHỈNH SỬA ĐỀ</button>
             </div>
-            <div class="user-auth">
-                <input type="text" id="user-name" placeholder="Nhập tên của Huy...">
-                <button class="btn-start" onclick="app.startExam()">BẮT ĐẦU NGAY</button>
+            <div class="auth-box">
+                <label>Huy hãy nhập tên để ghi danh:</label>
+                <input type="text" id="user-name" placeholder="Tên của bạn...">
+                <button class="btn-start" onclick="app.launchWorkspace()">BẮT ĐẦU LÀM BÀI</button>
             </div>
         </div>
     </div>
 
-    <div id="layer-work" class="overlay hidden">
-        <div class="workspace-box">
-            <header class="ws-head">
-                <div class="ws-info">
-                    <h2 id="ws-title">---</h2>
-                    <div id="ws-clock">00:00</div>
+    <div id="pop-workspace" class="overlay hidden">
+        <div class="workspace-full">
+            <div class="ws-head">
+                <div class="ws-title-group">
+                    <h2 id="ws-display-title">Đề thi</h2>
+                    <span id="ws-timer">00:00</span>
                 </div>
-                <button class="btn-x" onclick="app.confirmExit()">✕</button>
-            </header>
-            <div id="ws-body" class="custom-scroll"></div>
-            <footer class="ws-foot">
-                <div class="ws-progress"><div id="ws-bar"></div></div>
-                <button class="btn-glow" onclick="app.submitExam()">NỘP BÀI & PHÂN TÍCH</button>
-            </footer>
-        </div>
-    </div>
-
-    <div id="layer-result" class="overlay hidden">
-        <div class="pop-card result-box wide ani-slide-up">
-            <div id="certificate-area">
-                <div class="cert-header">DIAMOND OMNI RESULT</div>
-                <h1 id="res-score">0/0</h1>
-                <p id="res-name">---</p>
-                <div id="res-insight" class="insight-text">Đang AI phân tích lỗi sai...</div>
+                <button class="btn-close-ws" onclick="app.triggerExit()">✕</button>
             </div>
-            <div class="res-actions">
-                <button onclick="app.exportCert()">TẢI CHỨNG CHỈ</button>
-                <button class="btn-close" onclick="location.reload()">QUAY VỀ TRANG CHỦ</button>
+            <div id="ws-content" class="custom-scroll"></div>
+            <div class="ws-foot">
+                <button class="btn-primary-diamond" onclick="app.finishQuiz()">NỘP BÀI & KẾT THÚC</button>
             </div>
         </div>
     </div>
 
-    <div id="layer-editor" class="overlay hidden">
+    <div id="pop-editor" class="overlay hidden">
         <div class="pop-card wide">
-            <div class="ed-head"><h3>TRÌNH BIÊN TẬP</h3><button onclick="ui.hide('layer-editor')">✕</button></div>
-            <div id="ed-body" class="custom-scroll"></div>
+            <div class="editor-header">
+                <h3>BIÊN TẬP VIÊN DIAMOND</h3>
+                <button class="btn-close-small" onclick="ui.hide('pop-editor')">✕</button>
+            </div>
+            <div id="editor-view" class="custom-scroll"></div>
+            <button id="save-edit-btn" class="btn-primary-diamond hidden">XÁC NHẬN LƯU</button>
         </div>
     </div>
 
-    <div id="layer-alert" class="overlay hidden">
+    <div id="pop-msg" class="overlay hidden">
         <div class="pop-card alert-box">
-            <h4 id="alt-title">DIAMOND NOTICE</h4>
-            <p id="alt-msg">---</p>
-            <div class="alt-btns">
-                <button id="alt-cancel" class="btn-sub hidden">HỦY</button>
-                <button id="alt-ok" class="btn-glow">XÁC NHẬN</button>
+            <h4 id="msg-title">THÔNG BÁO</h4>
+            <p id="msg-body">Nội dung...</p>
+            <div class="msg-btns">
+                <button class="btn-cancel hidden" id="msg-cancel-btn">HỦY</button>
+                <button class="btn-primary-diamond" id="msg-ok-btn">ĐỒNG Ý</button>
             </div>
         </div>
     </div>
